@@ -5,6 +5,7 @@
 #define SWAP_ADRESS(A,B) {void *C = A; A = B; B = C;}
 #define MAX_SYMBOL_SHIFT (1 << ((sizeof(unsigned short int) * 8) - 1))
 #define MAX_MASK_SHIFT (1 << ((sizeof(unsigned char) * 8) - 1))
+#define MAX_BYTE_VAL 255
 
 #include "utils.h"
 
@@ -22,10 +23,12 @@ enum{
 
 typedef struct huffman_t HUFFMAN_T;
 typedef struct node NODE;
+typedef unsigned char byte;
+typedef unsigned short int l_byte;
 
 HUFFMAN_T *huffmanInit();
-void huffmanCompress(HUFFMAN_T *, FILE *, FILE *);
-void huffmanDecompress(HUFFMAN_T *, FILE *, FILE *);
+void huffmanCompress(HUFFMAN_T *, FILE *const, FILE *);
+void huffmanDecompress(HUFFMAN_T *, FILE *const, FILE *);
 boolean huffmanDestroy(HUFFMAN_T **);
 
 #endif

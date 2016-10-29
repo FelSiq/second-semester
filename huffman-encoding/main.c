@@ -8,7 +8,7 @@ int main(int argc, char const *argv[]){
 		//check if destiny file already exists
 		if (access(argv[ARG_FOUTPUT], F_OK) == INVALID){
 			//Opening input file
-			FILE *finput = fopen(argv[ARG_FINPUT], "rb");
+			FILE *const finput = fopen(argv[ARG_FINPUT], "rb");
 			if (finput != NULL){
 				//Initiation of huffman tree
 				HUFFMAN_T *huffman_t = huffmanInit(finput);
@@ -19,7 +19,7 @@ int main(int argc, char const *argv[]){
 					#endif
 
 					#ifndef DEBUG
-						FILE *foutput = fopen(argv[ARG_FOUTPUT], "wb");
+						FILE *foutput = fopen(argv[ARG_FOUTPUT], "wb+");
 					#endif
 						
 					if (foutput != NULL){

@@ -2,12 +2,11 @@
 #include <stdio.h>
 #include "huffman.h"
 
-#define DEBUG
+//#define DEBUG
 
 struct node{
-	unsigned char value;
+	byte value, level;
 	unsigned int freq;
-	unsigned short int level;
 	struct node *s_left, *s_right;
 };
 
@@ -16,9 +15,15 @@ struct huffman_t{
 };
 
 typedef struct{
-	unsigned short int *m_list, *m_levels, codeMask, codePackage, level;
+	l_byte *m_list, codeMask, codePackage;
+	byte *m_levels, level;
 	FILE *foutput; 
 } codeInformation;
+
+typedef struct{
+	byte *symbol, *level;
+	l_byte *code;
+} decodifyTable;
 
 HUFFMAN_T *huffmanInit(){
 	#ifdef DEBUG
@@ -62,7 +67,7 @@ static NODE **function_hashInit(){
 	return hashTable;
 }
 
-static void function_quickSort(NODE **hashTable, short int start, short int end){
+static void function_quickSort(NODE **hashTable, short int const start, short int const end){
 	short int i = start, j = end, pivot = hashTable[(start + end)/2]->freq;
 	while(j >= i){
 		while(j > start && pivot < hashTable[j]->freq)
@@ -94,7 +99,7 @@ static void function_hashDestroy(NODE **hashTable, short int i){
 	}
 }
 
-static boolean function_preCompress(HUFFMAN_T *huffman_t, FILE *finput){
+static boolean function_preCompress(HUFFMAN_T *huffman_t, FILE *const finput){
 	#ifdef DEBUG
 		printf("D: now in function: _preCompress\n");
 	#endif
@@ -174,7 +179,7 @@ static boolean function_preCompress(HUFFMAN_T *huffman_t, FILE *finput){
 			function_hashDestroy(hashTable, j);
 
 			#ifdef DEBUG
-				printf("D: Process of hashTable destruction is completed. Returning to main...\n");
+				printf("D: Process of hashTable destruction is completed. Returning to compression function...\n");
 			#endif
 
 			return TRUE;
@@ -184,16 +189,16 @@ static boolean function_preCompress(HUFFMAN_T *huffman_t, FILE *finput){
 };
 
 #ifdef DEBUG
-	static void function_debug_PrintTree(NODE *root){
+	static void function_debug_PrintTree(NODE *root, byte level){
 		if (root != NULL){
 			if (root->s_left != NULL){
-				printf(", {(%u, %u)", root->s_left->value, root->s_left->freq);
-				function_debug_PrintTree(root->s_left);
+				printf(", [<-, %u]{(%u, %u)", level, root->s_left->value, root->s_left->freq);
+				function_debug_PrintTree(root->s_left, level + UNITY);
 				printf("}");
 			}
 			if (root->s_right != NULL){
-				printf(", {(%u, %u)", root->s_right->value, root->s_right->freq);
-				function_debug_PrintTree(root->s_right);
+				printf(", [->, %u]{(%u, %u)", level, root->s_right->value, root->s_right->freq);
+				function_debug_PrintTree(root->s_right, level + UNITY);
 				printf("}");
 			}
 		}
@@ -204,6 +209,10 @@ static void function_writeList(NODE *root, codeInformation *info){
 	#ifdef DEBUG
 		printf("D: codePackage: %u, codeMask: %u, level: %u\n", info->codePackage, info->codeMask, info->level);
 	#endif
+	//AKIIIIIIIIIIIII2
+	if (info->codeMask == EMPTY)
+		info->codeMask = MAX_SYMBOL_SHIFT;
+
 	if (root != NULL){
 		if (root->value != ASCII_SIZE){
 			//Found a leaf node
@@ -212,9 +221,9 @@ static void function_writeList(NODE *root, codeInformation *info){
 			root->level = info->level;
 
 			//Printing the compress code on output file
-			fwrite(&root->value, sizeof(unsigned char), UNITY, info->foutput);
-			fwrite(&root->level, sizeof(unsigned short int), UNITY, info->foutput);
-			fwrite(&info->codePackage, sizeof(unsigned short int), UNITY, info->foutput);
+			fwrite(&root->value, sizeof(byte), UNITY, info->foutput);
+			fwrite(&root->level, sizeof(byte), UNITY, info->foutput);
+			fwrite(&info->codePackage, sizeof(l_byte), UNITY, info->foutput);
 
 			#ifdef DEBUG
 				printf("D: modifying a legible output file 'HUFF_DEBUG.out' for debug purpose...\n");
@@ -222,7 +231,7 @@ static void function_writeList(NODE *root, codeInformation *info){
 				if (LEGIBLE_OUTPUT != NULL){
 					fprintf(LEGIBLE_OUTPUT, "%c%u|", root->value, root->level);
 					printf("D: created a new compress for symbol (%c): ", root->value);
-					for(unsigned short int test_mask = MAX_SYMBOL_SHIFT; test_mask > (MAX_SYMBOL_SHIFT >> info->level); test_mask >>= UNITY){
+					for(l_byte test_mask = MAX_SYMBOL_SHIFT; test_mask > (MAX_SYMBOL_SHIFT >> info->level); test_mask >>= UNITY){
 						fprintf(LEGIBLE_OUTPUT, "%u", ((info->m_list[root->value] & test_mask) >= UNITY));
 						printf("%u", ((info->m_list[root->value] & test_mask) >= UNITY));
 					}
@@ -250,7 +259,7 @@ static void function_writeList(NODE *root, codeInformation *info){
 	}
 };
 
-void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
+void huffmanCompress(HUFFMAN_T *huffman_t, FILE *const finput, FILE *foutput){
 	if (huffman_t != NULL && finput != NULL && foutput != NULL){
 		//This functions constructs the huffman tree for compactation
 		function_preCompress(huffman_t, finput);
@@ -258,7 +267,7 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 			printf("D: completed huffman tree construction. Result:\n{");
 			if (huffman_t->root != NULL){
 				printf("(%u, %u)", huffman_t->root->value, huffman_t->root->freq);
-				function_debug_PrintTree(huffman_t->root);
+				function_debug_PrintTree(huffman_t->root, UNITY);
 			}
 			printf("}\nD: now creating mask list with compress symbols...\n");
 		#endif
@@ -266,31 +275,40 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 		//This list will kept the code of each mask to compress the file
 		codeInformation *info = (codeInformation *) malloc(sizeof(codeInformation));
 		if (info != NULL){
-			info->m_list = (unsigned short int *) malloc(sizeof(unsigned short int) * (ASCII_SIZE + UNITY));
-			info->m_levels = (unsigned short int *) malloc(sizeof(unsigned short int) * (ASCII_SIZE + UNITY));
-			info->codeMask = MAX_SYMBOL_SHIFT;
+			info->m_list = (l_byte *) malloc(sizeof(l_byte) * (ASCII_SIZE + UNITY));
+			info->m_levels = (byte *) malloc(sizeof(byte) * (ASCII_SIZE + UNITY));
+			//AKIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+			info->codeMask = MAX_MASK_SHIFT/*MAX_SYMBOL_SHIFT*/;
 			info->codePackage = EMPTY;
 			info->level = EMPTY;
 			info->foutput = foutput;
 			if (info->m_list != NULL && info->m_levels != NULL){
+				//This function travels through all the tree and create a cache table to speed up the compact process
 				function_writeList(huffman_t->root, info);
+				//Creating a terminator character to the table
+				byte c_terminator = MAX_BYTE_VAL;
+				#ifdef DEBUG
+					printf("D: writed a table end marker: (%u)\n", c_terminator);
+				#endif
+				fwrite(&c_terminator, sizeof(byte), UNITY, foutput);
+
 				#ifdef DEBUG
 					printf("D: mask list successfully created.\nD: Verifying real output file:\n");
-					unsigned int size = ftell(info->foutput);
+					unsigned int size = ftell(info->foutput) - UNITY;
 					printf("D: There's %u characters on output...\n", size);
 					fseek(info->foutput, EMPTY, SEEK_SET);
-					unsigned char test_a;
-					unsigned short int test_b, test_c;
+					byte test_a, test_b;
+					l_byte test_c;
 					while(size > EMPTY){
-						fread(&test_a, sizeof(unsigned char), UNITY, info->foutput);
-						size -= sizeof(unsigned char);
+						fread(&test_a, sizeof(byte), UNITY, info->foutput);
+						size -= sizeof(byte);
 						if (test_a != EOF){
-							fread(&test_b, sizeof(unsigned short int), UNITY, info->foutput);
-							fread(&test_c, sizeof(unsigned short int), UNITY, info->foutput);
-							size -= 2*sizeof(unsigned short int);
+							fread(&test_b, sizeof(byte), UNITY, info->foutput);
+							fread(&test_c, sizeof(l_byte), UNITY, info->foutput);
+							size -= sizeof(byte)+sizeof(l_byte);
 
 							printf("(%c) (%u) (%u)[", test_a, test_b, test_c);
-							for(unsigned short int test_mask = MAX_SYMBOL_SHIFT; test_mask > (MAX_SYMBOL_SHIFT >> test_b); test_mask >>= UNITY)
+							for(l_byte test_mask = MAX_SYMBOL_SHIFT; test_mask > (MAX_SYMBOL_SHIFT >> test_b); test_mask >>= UNITY)
 								printf("%u", ((test_c & test_mask) >= UNITY));
 							printf("]\n");
 						} else break;
@@ -299,8 +317,8 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 				#endif
 
 				//File compression
-				unsigned char package = EMPTY, mask_package = MAX_MASK_SHIFT;
-				unsigned short int mask_in;
+				byte package = EMPTY, mask_package = MAX_MASK_SHIFT;
+				l_byte mask_in;
 				char c_in;
 
 				fseek(finput, EMPTY, SEEK_END);
@@ -316,7 +334,7 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 					if (c_in != EOF){
 						for(mask_in = MAX_SYMBOL_SHIFT; mask_in > (MAX_SYMBOL_SHIFT >> info->m_levels[(unsigned) c_in]); mask_in >>= UNITY){
 							if(mask_package == EMPTY){
-								fwrite(&package, sizeof(unsigned char), UNITY, foutput);
+								fwrite(&package, sizeof(byte), UNITY, foutput);
 								mask_package = MAX_MASK_SHIFT;
 								package = EMPTY;
 							}
@@ -336,7 +354,7 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 				#endif
 
 				if (mask_package >= UNITY)
-					fwrite(&package, sizeof(unsigned char), UNITY, foutput);
+					fwrite(&package, sizeof(byte), UNITY, foutput);
 				#ifdef DEBUG
 					printf("D: compression terminated. Freeing memories and returning to main...\n");
 				#endif
@@ -349,17 +367,200 @@ void huffmanCompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
 	}
 };
 
-static boolean function_preDecompress(HUFFMAN_T *huffman_t, FILE *finput){
-	if (huffman_t != NULL && finput != NULL){
-		
-		return TRUE;
+static NODE *function_nodeInit(){
+	NODE *node = (NODE *) malloc(sizeof(NODE));
+	if (node != NULL){
+		node->value = ASCII_SIZE;
+		node->s_right = NULL;
+		node->s_left = NULL;
 	}
-	return FALSE;
+	return node;
+}
+
+static void function_buildUp(HUFFMAN_T *huffman_t, decodifyTable* d_table, l_byte index){
+	if (huffman_t->root == NULL)
+		huffman_t->root = function_nodeInit();
+
+	//AKIIIIIIIIIIIIIIIIIIIIIII3 (max_symbol_shif) > max_mask
+	l_byte codeMask = MAX_MASK_SHIFT;
+	NODE *root = huffman_t->root;
+	
+	while(d_table->level[index] > EMPTY){
+		if ((d_table->code[index] & codeMask) >= UNITY){
+			if (root->s_right == NULL)
+				root->s_right = function_nodeInit();
+			root = root->s_right;
+		}else{
+			if (root->s_left == NULL)
+				root->s_left = function_nodeInit();
+			root = root->s_left;
+		}
+		codeMask >>= UNITY;
+		//AKIIIIIIIIIIIIIIIIIIIII4
+		if (codeMask == EMPTY)
+			codeMask = MAX_SYMBOL_SHIFT;
+		d_table->level[index]--;
+	}
+	//Write the symbol of leaf node value
+	root->value = d_table->symbol[index];
 };
 
-void huffmanDecompress(HUFFMAN_T *huffman_t, FILE *finput, FILE *foutput){
-	if (huffman_t != NULL && finput != NULL && foutput != NULL){
-		function_preDecompress(huffman_t, finput);
+static HUFFMAN_T *function_preDecompress(FILE *const finput){
+	if (finput != NULL){
+		HUFFMAN_T *huffman_t = (HUFFMAN_T *) malloc(sizeof(HUFFMAN_T));
+		if (huffman_t != NULL){
+			decodifyTable *d_table = (decodifyTable *) malloc(sizeof(decodifyTable));
+			if (d_table != NULL){
+				d_table->symbol = (byte *) malloc(sizeof(byte) * (ASCII_SIZE));
+				if (d_table->symbol != NULL){
+					d_table->level = (byte *) malloc(sizeof(byte) * (ASCII_SIZE));
+					if (d_table->level != NULL){
+						d_table->code = (l_byte *) malloc(sizeof(l_byte) * (ASCII_SIZE));
+						if (d_table->code != NULL) {
+							byte c = EMPTY;
+							#ifdef DEBUG
+								printf("D: cleaning decodify table to show up...\n");
+								short int i = (ASCII_SIZE - UNITY);
+								while(i >= EMPTY){
+									d_table->symbol[i] = EMPTY;
+									d_table->code[i] = EMPTY;
+									d_table->level[i] = EMPTY;
+									i--;
+								}
+								printf("D: now gathering information:\n");
+							#endif
+
+							//Gathering information from input file
+							while(c != MAX_BYTE_VAL && !feof(finput)){
+								fread(&c, sizeof(byte), UNITY, finput);
+								#ifdef DEBUG
+									printf("(%c/%u)", c, c);
+								#endif
+								if (c != MAX_BYTE_VAL){
+									unsigned int aux_v = (unsigned int) c;
+									d_table->symbol[aux_v] = c;
+									fread(&d_table->level[aux_v], sizeof(byte), UNITY, finput);
+									#ifdef DEBUG
+										printf("(%u)", d_table->level[aux_v]);
+									#endif
+									if (d_table->level[aux_v] != MAX_BYTE_VAL){
+										fread(&d_table->code[aux_v], sizeof(l_byte), UNITY, finput);
+										#ifdef DEBUG
+											printf("(%u)\n", d_table->code[aux_v]);
+										#endif
+									} else {
+										d_table->level[aux_v] = EMPTY;
+										break;
+									}
+								} else break;
+							}
+							
+							#ifdef DEBUG
+								if (d_table != NULL){
+									printf("D: the decodify table is like: (symbol, level, code)\n");
+									short int i = (ASCII_SIZE - UNITY);
+									while(i >= EMPTY){
+										printf("(%c, %u, ", d_table->symbol[i], d_table->level[i]);
+										for(l_byte test_mask = MAX_SYMBOL_SHIFT; test_mask > (MAX_SYMBOL_SHIFT >> d_table->level[i]); test_mask >>= UNITY)
+											printf("%u", ((d_table->code[i] & test_mask) >= UNITY));
+										printf(")\n");
+										i--;
+									}
+									printf("D: now going to build up huffman tree...\n");
+								}
+							#endif
+
+							//Now it's time to build up the tree using the decodify table.
+							char aux_counter = (ASCII_SIZE - UNITY);
+							while(aux_counter >= EMPTY){
+								if (d_table->level[(unsigned) aux_counter] > EMPTY)
+									function_buildUp(huffman_t, d_table, (unsigned) aux_counter);
+								aux_counter--;
+							}
+
+							#ifdef DEBUG
+								printf("D: huffman tree builded. Destroying decodify table and returning to decompress function...\n");
+							#endif
+
+							//freeing memory form d_table
+							free(d_table->level);
+							free(d_table->symbol);
+							free(d_table->code);
+							free(d_table);
+							//Returning to decompress function
+							return huffman_t;
+						}
+						free(d_table->level);
+					}
+					free(d_table->symbol);
+				}
+				free(d_table);
+			}
+			free(huffman_t);
+		}
+	}
+	return NULL;
+};
+
+static unsigned char function_generateValue(HUFFMAN_T *huffman_t, FILE *const finput, 
+	byte *input_mask, long long int *f_size, l_byte *input_code){
+	NODE *traveller = huffman_t->root;
+	if (traveller != NULL){
+		while(traveller != NULL && traveller->value == ASCII_SIZE){
+			if (*input_mask == EMPTY){
+				fread(input_code, sizeof(l_byte), UNITY, finput);
+				*input_mask = MAX_MASK_SHIFT;
+				*f_size -= sizeof(l_byte);
+			}
+
+			if (((*input_code) & (*input_mask)) >= UNITY)
+				traveller = traveller->s_right;
+			else
+				traveller = traveller->s_left;
+			(*input_mask) >>= UNITY;
+		}
+		return traveller->value;
+	}
+	return ASCII_SIZE;
+}
+
+void huffmanDecompress(HUFFMAN_T *huffman_t, FILE *const finput, FILE *foutput){
+	if (finput != NULL && foutput != NULL){
+		//First, load the decodify table at the start of compressed file and transforms it into a huffman tree
+		huffman_t = function_preDecompress(finput);
+
+		if (huffman_t != NULL){
+			#ifdef DEBUG
+				printf("D: completed huffman tree construction. Result:\n{");
+				if (huffman_t->root != NULL){
+					printf("(%u, %u)", huffman_t->root->value, huffman_t->root->freq);
+					function_debug_PrintTree(huffman_t->root, UNITY);
+				}
+				printf("}\nD: now generating output decompressed file...\n");
+			#endif
+
+			//Generating output file
+			fseek(finput, EMPTY, SEEK_END);
+			long long int f_size = ftell(finput);
+			fseek(finput, EMPTY, SEEK_SET);
+
+			#ifdef DEBUG
+				printf("D: input file has %lld symbols in it.\n", f_size);
+			#endif
+
+			l_byte input_code = EMPTY;
+			byte input_mask = EMPTY, c_out = EMPTY;
+			while(f_size >= EMPTY){
+				c_out = function_generateValue(huffman_t, finput, &input_mask, &f_size, &input_code);
+				if (c_out != ASCII_SIZE)
+					fprintf(foutput, "%c", c_out);
+			}
+
+			#ifdef DEBUG
+				long long int SIZE_OUT = ftell(foutput);
+				printf("D: proccess terminated. Output file has %lld characters.\nD: returning to main...\n", SIZE_OUT);
+			#endif
+		}
 	}
 };
 
