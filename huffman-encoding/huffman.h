@@ -6,6 +6,8 @@
 #define MAX_SYMBOL_SHIFT (1 << ((sizeof(unsigned short int) * 8) - 1))
 #define MAX_MASK_SHIFT (1 << ((sizeof(unsigned char) * 8) - 1))
 #define MAX_BYTE_VAL 255
+#define MAX_LBYTE_VAL 65535
+#define BITS_IN_BYTE 8
 
 #include "utils.h"
 

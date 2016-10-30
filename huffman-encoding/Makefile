@@ -5,4 +5,4 @@ huffman.o:
 main.o:
 	gcc -c main.c -Wall
 clean:
-	rm *.o huff
+	rm *.o huff *.hfm
