@@ -55,7 +55,7 @@ static CHAMBER **get_entries(MAZE *maze){
 	if (maze != NULL){
 		scanf("%hu", &maze->num_dots);
 		getchar();
-		list = (CHAMBER **) malloc(sizeof(CHAMBER *) * maze->num_dots);
+		list = (CHAMBER **) malloc(sizeof(CHAMBER *) * (maze->num_dots));
 		for(short int i = maze->num_dots - UNITY; i >= EMPTY; i--)
 			list[i] = NULL;
 
@@ -180,6 +180,7 @@ MAZE *maze_init(CHAMBER ***chambers){
 	return maze;
 };
 
+//Destroy the maze structure.
 void maze_destroy(MAZE **maze, CHAMBER ***chambers){
 	if (maze != NULL && *maze != NULL){
 		if (chambers != NULL && *chambers != NULL){
@@ -226,6 +227,7 @@ void maze_destroy(MAZE **maze, CHAMBER ***chambers){
 	}
 };
 
+//Print the solution registers.
 void maze_solutionsPrint(SOLUTIONS *const solutions){
 	if (solutions != NULL && solutions->paths != NULL){
 		for(unsigned int j = EMPTY; j < solutions->num_sol; j++){
@@ -239,6 +241,7 @@ void maze_solutionsPrint(SOLUTIONS *const solutions){
 	}
 };
 
+//Auxiliary function of sort, in case of indexes are taken part of the sort criterium.
 static void function_sortPaths(path_info **paths, unsigned int const size){
 	for(int i = UNITY; i < size; i++)
 		for(int j = EMPTY; j < size - i; j++)
@@ -247,6 +250,7 @@ static void function_sortPaths(path_info **paths, unsigned int const size){
 					SWAP(paths[j], paths[j + UNITY]);
 };
 
+//Modified bucketSort to sort the solutions.
 static void function_bucketSort(path_info **paths, unsigned int const size, short int const criteria){
 	short int j, k;
 	long int i = (size - UNITY);
@@ -315,11 +319,13 @@ static void function_bucketSort(path_info **paths, unsigned int const size, shor
 	free(aux);
 };
 
+//Call function of sort
 void maze_solutionsSort(SOLUTIONS *solutions){
 	if (solutions != NULL && solutions->paths != NULL)
 		function_bucketSort(solutions->paths, solutions->num_sol, EMPTY);
 };
 
+//This function clean up the solution registers.
 void maze_solutionsDestroy(SOLUTIONS *solutions){
 	if (solutions != NULL){
 		if (solutions->paths != NULL){
@@ -338,6 +344,7 @@ void maze_solutionsDestroy(SOLUTIONS *solutions){
 	}
 };
 
+//This function init the 'current solution' tracker.
 static path_info *function_pathInit(){
 	path_info *path = (path_info *) malloc(sizeof(path_info));
 	if (path != NULL){
@@ -348,6 +355,7 @@ static path_info *function_pathInit(){
 	return path;
 };
 
+//This functions makes a copy of a brand-new solution to a register, to be displayed later.
 static void function_addSolution(SOLUTIONS *solutions, path_info *const current_path){
 	//This function creates a copy of a solution because the solutions must be printed sorted
 	if (solutions != NULL && current_path != NULL){
@@ -368,6 +376,7 @@ static void function_addSolution(SOLUTIONS *solutions, path_info *const current_
 	}
 };
 
+//This function init a solution data register
 static SOLUTIONS *function_solutionsInit(){
 	SOLUTIONS *solutions = (SOLUTIONS *) malloc(sizeof(SOLUTIONS));
 	if (solutions != NULL){
@@ -391,14 +400,15 @@ GO THROUGH MAZE WITH "BRUTE FORCE"
 5. 	If a dead-end is reached, do 2 without printing current vector.
 */
 
-SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
+SOLUTIONS *maze_searchPaths(MAZE *maze){
 	SOLUTIONS *solutions = function_solutionsInit();
 
 	#ifdef DEBUG
 		printf("D: started search for solutions...\n");
 	#endif
 
-	if (solutions != NULL && maze != NULL && chambers != NULL){
+	if (solutions != NULL && maze != NULL){
+		maze->start->marked = TRUE;
 		CHAMBER *traveller = maze->start;
 		STACK *tracking = stack_create();
 		if (traveller != NULL){
@@ -409,13 +419,12 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 					maze->current_path->path_indexes = (short int *) realloc(maze->current_path->path_indexes,
 						sizeof(short int) * (maze->current_path->path_size + UNITY));
 					maze->current_path->path_indexes[maze->current_path->path_size++] = traveller->index;
-
 					//#1 - mark current chamber, add a unity in path size and stack it due to a possible backtrack
 					traveller->marked = TRUE;
 					stack_push(tracking, traveller);
 
 					#ifdef DEBUG
-						printf("D: traveller index: %hu\n", traveller->index);
+						printf("D: traveller index: %hu (%hd)\n", traveller->index, traveller->num_paths - traveller->paths_minus);
 					#endif
 
 					//#2 - 	Check if the current chamber has a maze exit. If true, print the current path and proceed.
@@ -423,10 +432,12 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 					if (traveller->end_chamber){
 						FLAG_REC = TRUE;
 						function_addSolution(solutions, maze->current_path);
+						if (traveller == maze->start)
+							traveller->end_chamber = FALSE;
 					}
 
 					//#3 - 	Check if the current chamber has alternative ways. If true, stack current chamber to keep its adress.
-					if ((traveller->num_paths - traveller->paths_minus) > 2){
+					if ((traveller->num_paths - traveller->paths_minus) > (2 - (traveller == maze->start))){
 						//Then we stack the current chamber to get back here in future
 						CHAMBER *aux = traveller;
 						stack_push(maze->memory, traveller);
@@ -434,8 +445,7 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 						traveller = aux->paths[aux->num_paths - UNITY];
 						++(aux->paths_minus);
 						while(traveller->marked && (aux->num_paths) > aux->paths_minus){
-							SWAP(traveller->paths[traveller->num_paths - 1], traveller->paths[EMPTY]);
-							for(int k = traveller->num_paths - 2; k > EMPTY; k--)
+							for(int k = EMPTY; k < traveller->num_paths - 1; k++)
 								SWAP(traveller->paths[k], traveller->paths[k + 1]);
 							traveller = aux->paths[(aux->num_paths - UNITY)];
 							++(aux->paths_minus);
@@ -445,9 +455,9 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 						//And then go the selected way in the next loop.
 					} else{
 						//There's no alternative ways. In that situation, we must have two possibilities:
-						if ((traveller->num_paths - traveller->paths_minus) == UNITY && traveller->paths[EMPTY]->marked){
+						if ((traveller->num_paths - traveller->paths_minus) <= UNITY && (traveller->paths[EMPTY]->marked)){
 							//There's no another possible way, i.e we reached a dead end. By now, there's two possibilities:
-							if (!stack_empty(maze->memory) /*&& stack_top(maze->memory) != traveller*/){
+							if (!stack_empty(maze->memory)){
 								//a) Another way was left back, then backtrack and check that way.
 								//Backtrack here.
 								do{
@@ -457,11 +467,16 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 									CHAMBER *aux_2 = traveller;
 									traveller = stack_pop(tracking);
 									if (FLAG_REC && traveller->paths_minus > EMPTY){
-										SWAP(traveller->paths[traveller->num_paths - 1], traveller->paths[EMPTY]);
-										for(int k = traveller->num_paths - 2; k > EMPTY; k--)
-											SWAP(traveller->paths[k], traveller->paths[k + 1]);
-										traveller->paths_minus--;
+										do{
+											for(int k = traveller->num_paths - 2; k >= EMPTY; k--)
+												SWAP(traveller->paths[k], traveller->paths[k + 1]);
+											--traveller->paths_minus;
+										}while (traveller->paths_minus > UNITY);
 									}
+
+									#ifdef DEBUG
+										printf("D: traveller index: %hu (%hd)\n", traveller->index, (short int) traveller->num_paths - traveller->paths_minus);
+									#endif
 									maze->current_path->geodesic_dis -= EUCLIDEAN(traveller, aux_2);
 								} while(!stack_empty(tracking) && traveller != stack_top(maze->memory));
 								stack_pop(maze->memory);
@@ -496,13 +511,16 @@ SOLUTIONS *maze_searchPaths(MAZE *maze, CHAMBER **chambers){
 												CHAMBER *aux_2 = traveller;
 
 												traveller = stack_pop(tracking);
-												if (FLAG_REC && traveller->paths_minus > EMPTY){
-													SWAP(traveller->paths[traveller->num_paths - 1], traveller->paths[EMPTY]);
-													for(int k = traveller->num_paths - 2; k > EMPTY; k--)
-														SWAP(traveller->paths[k], traveller->paths[k + 1]);
-													traveller->paths_minus--;
+												if (FLAG_REC && traveller->paths_minus > UNITY){
+													do{
+														for(int k = traveller->num_paths - 2; k >= EMPTY; k--)
+															SWAP(traveller->paths[k], traveller->paths[k + 1]);
+														--traveller->paths_minus;
+													}while(traveller->paths_minus > UNITY);
 												}
-												
+												#ifdef DEBUG
+													printf("D: traveller index: %hu (%hd)\n", traveller->index, (short int) traveller->num_paths - traveller->paths_minus);
+												#endif
 												maze->current_path->geodesic_dis -= EUCLIDEAN(traveller, aux_2);
 											}while(!stack_empty(tracking) && traveller != stack_top(maze->memory));
 											stack_pop(maze->memory);

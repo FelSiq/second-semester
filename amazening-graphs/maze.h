@@ -7,7 +7,7 @@ typedef struct solutions SOLUTIONS;
 
 MAZE *maze_init(CHAMBER ***);
 void maze_destroy(MAZE **, CHAMBER ***);
-SOLUTIONS *maze_searchPaths(MAZE *, CHAMBER **);
+SOLUTIONS *maze_searchPaths(MAZE *);
 void maze_solutionsSort(SOLUTIONS *);
 void maze_solutionsPrint(SOLUTIONS *const);
 void maze_solutionsDestroy(SOLUTIONS *);
