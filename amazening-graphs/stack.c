@@ -2,6 +2,10 @@
 #include <stdio.h>
 #include "stack.h"
 
+/*
+	NOTA: ESTE TRABALHO NÃO PRECISA SER CORRIGIDO POIS >NÃO< SOU DA TURMA.
+*/
+
 struct item{
 	CHAMBER *memory;
 	struct item *prev;
