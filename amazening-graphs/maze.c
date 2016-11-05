@@ -183,6 +183,9 @@ static CHAMBER **get_entries(MAZE *maze){
 				list[aux_0]->paths = (CHAMBER **) realloc(list[aux_0]->paths, sizeof(CHAMBER *) * (list[aux_0]->num_paths + UNITY));
 				list[aux_0]->paths[list[aux_0]->num_paths++] = list[maze->num_dots];
 				maze->start = list[maze->num_dots];
+
+				list[maze->num_dots]->cd_x = list[aux_0]->cd_x;
+				list[maze->num_dots]->cd_y = list[aux_0]->cd_y;
 			}
 
 			#ifdef DEBUG
@@ -215,7 +218,7 @@ MAZE *maze_init(CHAMBER ***chambers){
 void maze_destroy(MAZE **maze, CHAMBER ***chambers){
 	if (maze != NULL && *maze != NULL){
 		if (chambers != NULL && *chambers != NULL){
-			short int i = ((*maze)->num_dots - UNITY);
+			short int i = ((*maze)->num_dots);
 			while(i >= EMPTY){
 				#ifdef DEBUG
 					printf("D: destroying #%hd maze dot...\n", i);
@@ -275,13 +278,17 @@ void maze_solutionsPrint(SOLUTIONS *const solutions){
 //Auxiliary function of sort, in case of indexes are taken part of the sort criterium.
 static void function_sortPaths(path_info **paths, unsigned int const size){
 	for(int i = UNITY; i < size; i++)
-		for(int j = EMPTY; j < size - i; j++)
-			for(int k = EMPTY; k < paths[EMPTY]->path_size; k++)
-				if (paths[j]->path_indexes[k] > paths[j + UNITY]->path_indexes[k])
+		for(int j = EMPTY; j < (int) size - i; j++)
+			for(int k = EMPTY; k < paths[EMPTY]->path_size && paths[j]->path_indexes[k] < paths[j + UNITY]->path_indexes[k]; k++)
+				if (paths[j]->path_indexes[k] > paths[j + UNITY]->path_indexes[k]){
 					SWAP(paths[j], paths[j + UNITY]);
+					break;
+				}
+			
 };
 
 //Modified bucketSort to sort the solutions.
+//This sort uses the idea of RadixSort, but each call its criteria changes.
 static void function_bucketSort(path_info **paths, unsigned int const size, short int const criteria){
 	short int j, k;
 	long int i = (size - UNITY);
@@ -386,29 +393,55 @@ static path_info *function_pathInit(){
 	return path;
 };
 
+//This function make sure that the same solution is not registered multiple times.
+static boolean function_validateSolution(SOLUTIONS *solutions, path_info *const current_path){
+	long int j = EMPTY;
+	for(long int i = ((long int) solutions->num_sol - UNITY); i >= EMPTY; i--)
+		if ((int) solutions->paths[i]->geodesic_dis == (int) current_path->geodesic_dis && solutions->paths[i]->path_size == current_path->path_size){
+			for(j = ((long int) current_path->path_size - UNITY); j >= EMPTY; j--)
+				if (solutions->paths[i]->path_indexes[j] != current_path->path_indexes[j])
+					break;
+			if (j < EMPTY)
+				return FALSE;
+		}
+	return TRUE;
+};
+
+//Used to free the memory from the 'current path' structure.
+static void function_pathDestroy(path_info *current_path){
+	if (current_path != NULL){
+		if (current_path->path_indexes != NULL)
+			free(current_path->path_indexes);
+		free(current_path);
+	}
+}
+
 //This functions makes a copy of a brand-new solution to a register, to be displayed later.
 static void function_addSolution(SOLUTIONS *solutions, path_info *const current_path){
 	//This function creates a copy of a solution because the solutions must be printed sorted
 	if (solutions != NULL && current_path != NULL){
-		solutions->paths = (path_info **) realloc(solutions->paths, sizeof(path_info *) * (solutions->num_sol + UNITY));
-		if (solutions->paths != NULL){
-			solutions->paths[solutions->num_sol] = function_pathInit();
-			path_info *aux = solutions->paths[solutions->num_sol];
-			unsigned int aux_size = current_path->path_size;
+		//Check if the solution is not a copy of another one already registered
+		if (function_validateSolution(solutions, current_path)){
+			solutions->paths = (path_info **) realloc(solutions->paths, sizeof(path_info *) * (solutions->num_sol + UNITY));
+			if (solutions->paths != NULL){
+				solutions->paths[solutions->num_sol] = function_pathInit();
+				path_info *aux = solutions->paths[solutions->num_sol];
+				unsigned int aux_size = current_path->path_size;
 
-			aux->geodesic_dis = current_path->geodesic_dis;
-			aux->path_size = aux_size;
-			aux->path_indexes = (short int *) malloc(sizeof(short int) * aux_size);
-			if (aux->path_indexes != NULL)
-				for(unsigned int i = EMPTY; i < aux_size; i++)
-					aux->path_indexes[i] = current_path->path_indexes[i];
-			solutions->num_sol++;
+				aux->geodesic_dis = current_path->geodesic_dis;
+				aux->path_size = aux_size;
+				aux->path_indexes = (short int *) malloc(sizeof(short int) * aux_size);
+				if (aux->path_indexes != NULL)
+					for(unsigned int i = EMPTY; i < aux_size; i++)
+						aux->path_indexes[i] = current_path->path_indexes[i];
+				solutions->num_sol++;
+			}
 		}
 	}
 };
 
 //This function init a solution data register
-static SOLUTIONS *function_solutionsInit(){
+SOLUTIONS *function_solutionsInit(){
 	SOLUTIONS *solutions = (SOLUTIONS *) malloc(sizeof(SOLUTIONS));
 	if (solutions != NULL){
 		solutions->num_sol = EMPTY;
@@ -431,15 +464,19 @@ GO THROUGH MAZE WITH "BRUTE FORCE"
 5. 	If a dead-end is reached, do 2 without printing current vector.
 */
 
+//Auxiliary function of pathfinding.
 static CHAMBER *function_backtrack(MAZE *maze, STACK *tracking){
 	//IMPORTANT: THIS IS >NOT< A RECURSIVE BACKTRACKING, it's just a iterative simulation.
 	//This functions returns to a memorized chamber.
 
 	//First, we get the top adress of tracking memory.
 	CHAMBER *traveller = stack_pop(tracking), *aux_geodis = traveller;
+
 	//We need to get back to the last memorized 'multi-ways' chamber.
 	do{
-		traveller->marked = FALSE;
+		//Not gonna mark off dead-ends with no purpose.
+		if (traveller->num_paths > UNITY || traveller->end_chamber)
+			traveller->marked = FALSE;
 		maze->current_path->path_size--;
 		traveller = stack_pop(tracking);
 
@@ -447,15 +484,15 @@ static CHAMBER *function_backtrack(MAZE *maze, STACK *tracking){
 		aux_geodis = traveller;
 		
 		#ifdef DEBUG
-			printf("D: (backtrack) traveller current index: %hd, paths left: %hd.\n", 
+			printf("D: (BT) traveller cur ind: [%hd] (%hd).\n", 
 				traveller->index, traveller->num_paths - traveller->paths_minus);
 		#endif
 	} while(!stack_empty(tracking) && traveller != stack_top(maze->memory));
 	return stack_pop(maze->memory);
 };
 
-SOLUTIONS *maze_searchPaths(MAZE *maze){
-	SOLUTIONS *solutions = function_solutionsInit();
+//Main function of pathfinding.
+void maze_searchPaths(MAZE *maze, SOLUTIONS *solutions){
 	if (maze != NULL){
 		STACK *tracking = stack_create();
 		maze->current_path = function_pathInit();
@@ -465,55 +502,49 @@ SOLUTIONS *maze_searchPaths(MAZE *maze){
 			stack_push(tracking, traveller);
 			traveller = traveller->paths[EMPTY];
 			while(FLAG){
-				//Geodesic distance information...
+					//Geodesic distance information...
 				CHAMBER *aux_geodis = traveller;
-				//It's also very important to stack the current chamber on the auxiliary stack memory too
+					//It's also very important to stack the current chamber on the auxiliary stack memory too
 				stack_push(tracking, traveller);
-				//Debug information:
-				#ifdef DEBUG
-					printf("D: (going) traveller current index: %hd, paths left: %hd.\n", 
+					//Debug information:
+					#ifdef DEBUG
+						printf("D: (GO) traveller cur ind: [%hd] (%hd).\n", 
 						traveller->index, traveller->num_paths - traveller->paths_minus);
-				#endif
-				//Last but not least, check if the current chamber has a maze exit and this solutions is not a backtrack copy
+					#endif
+					//Last but not least, check if the current chamber has a maze exit and this solutions is not a backtrack copy
 				if (!traveller->marked){
-					//First things first, we need to mark the current chamber and set if to the currenth path solution
+						//First things first current chamber to the currenth path solution
 					maze->current_path->path_indexes = (short int *) realloc(maze->current_path->path_indexes, 
 						sizeof(short int) * (UNITY + maze->current_path->path_size));
 					maze->current_path->path_indexes[maze->current_path->path_size++] = traveller->index;
 					if (traveller->end_chamber){
-						//If true, register the current solution.
+							//If true, register the current solution.
 						function_addSolution(solutions, maze->current_path);
 					}
 				}
+					//mark the current chamber is a must 
 				traveller->marked = TRUE;
-				//Now we going to see all the possibilities of the current chamber.
-				if(traveller->index == INVALID || traveller->num_paths == traveller->paths_minus)
-					FLAG = FALSE;
-				else if (traveller->num_paths > 2){
-					//'paths_minus' tracks the number of exits of the current chamber.
-					//If the statement above is true, then we got a brand-new exit (the way back does not counts, hence '- UNITY')
-					//It's important to known that every extra way in a start chamber is already considered brand-news possible exits.
-					//First, stack this chamber to backtrack in future
+					//Now we going to see all the possibilities of the current chamber.
+				if(traveller->index == INVALID || traveller->num_paths == traveller->paths_minus){
+						//These are condiditions for exception cases
+					if (traveller->index != INVALID && !stack_empty(maze->memory))
+						traveller = function_backtrack(maze, tracking);
+					else
+						FLAG = FALSE;
+				} else if (/*traveller->num_paths - traveller->paths_minus > UNITY*/traveller->num_paths > 2){
+						//'paths_minus' tracks the number of exits of the current chamber.
+						//If the statement above is true, then we got a brand-new exit (the way back does not counts, hence '- UNITY')
+						//It's important to known that every extra way in a start chamber is already considered brand-news possible exits.
+						//First, stack this chamber to backtrack in future
 					stack_push(maze->memory, traveller);
-					//Then, select a any way.
+						//Then, select a any way.
 					CHAMBER *aux = NULL;
 					do aux = traveller->paths[traveller->paths_minus++];
 					while ((traveller->paths_minus < traveller->num_paths) && aux->marked);
 					//We chosed a way, so there will be a one way less in the next time we visit this chamber.
-					traveller = aux;
-					//Keep track of the travel geodesic distance
-					maze->current_path->geodesic_dis += EUCLIDEAN(aux_geodis, traveller); 
-				}else{
-					//The chamber does not have much options. We have two possibilities:
-					//a) or this chamber is a dead-end
-					//b) ''   ''  ''     has only one way left 
-					//To be sure of this:
-					if (traveller->num_paths == UNITY){
-						//It's a dead end, i.e the only possible way out is the way we came from.
-						//In this situation, we open two new possibilities:
-						//a.1) We have something stored in maze stack memory, i.e. a new possible way is left back
-						//b.2) We don't have anything in maze stack memory, so nothing is left back.
-						//Then...
+					//First, verify if it's really a valid choice:
+					if (aux->marked){
+						stack_pop(maze->memory);	
 						if (!stack_empty(maze->memory)){
 							//There's something in the maze's memory. It's time to a "backtracking".
 							//To not mix things up and *uck everything we call a auxiliary function.
@@ -523,40 +554,98 @@ SOLUTIONS *maze_searchPaths(MAZE *maze){
 							//We don't have anything in maze stack memory, so the process supposedly is completed.
 							FLAG = FALSE;//End loops.
 						}
-					} else{
-						//We are supposedly in a one-way track, i.e. the chamber has only the way back and one way to proceed.
-						//Not a new thing, we have two options in this situation too:
-						//b.1) Or we can proceed naturally.
-						//b.2) Or not, because the only way left will get us back to somewhere we already passed by:
-						// (Way back) <--- (Current chamber) ---> (Somewhere already marked)
-						//So...
-						if (traveller->paths[EMPTY]->marked & traveller->paths[UNITY]->marked){
-							//Both ways are marked. This situation is like a dead-end chamber. So...
-							if (!stack_empty(maze->memory)){
+					}else{
+						traveller = aux;
+						//Keep track of the travel geodesic distance
+						maze->current_path->geodesic_dis += EUCLIDEAN(aux_geodis, traveller); 
+					}
+				}else{
+						//The chamber does not have much options. We have two possibilities:
+						//a) or this chamber is a dead-end
+						//b) ''   ''  ''     has only one way left 
+						//To be sure of this:
+					if (traveller->num_paths == UNITY){
+							//It's a dead end, i.e the only possible way out is the way we came from.
+							//In this situation, we open two new possibilities:
+							//a.1) We have something stored in maze stack memory, i.e. a new possible way is left back
+							//b.2) We don't have anything in maze stack memory, so nothing is left back.
+							//Then...
+						if (!stack_empty(maze->memory)){
 								//There's something in the maze's memory. It's time to a "backtracking".
 								//To not mix things up and *uck everything we call a auxiliary function.
 								//Renember that the current chamber is already in the top of tracking stack memory.
-								traveller = function_backtrack(maze, tracking);
-							}else{
+							traveller = function_backtrack(maze, tracking);
+						}else{
 								//We don't have anything in maze stack memory, so the process supposedly is completed.
 								FLAG = FALSE;//End loops.
 							}
-						} else {
-							//There's a natural way. Best choose the right one, not the way we come from.
-							//Again, the current chamber is already marked and stacked on tracking memory.
-							CHAMBER *aux = traveller->paths[EMPTY];
-							if(aux->marked)
-								aux = traveller->paths[UNITY];
-							traveller = aux;
-							//Keep track of the travel geodesic distance
-							maze->current_path->geodesic_dis += EUCLIDEAN(aux_geodis, traveller);
+						} else{
+							//We are supposedly in a one-way track, i.e. the chamber has only the way back and one way to proceed.
+							//Not a new thing, we have two options in this situation too:
+							//b.1) Or we can proceed naturally.
+							//b.2) Or not, because the only way left will get us back to somewhere we already passed by:
+							// (Way back) <--- (Current chamber) ---> (Somewhere already marked)
+							//So...
+							if (!(traveller->paths[EMPTY]->marked & traveller->paths[UNITY]->marked)){
+								//There's a natural way. Best choose the right one, not the way we come from.
+								//Again, the current chamber is already marked and stacked on tracking memory.
+								CHAMBER *aux = traveller->paths[EMPTY];
+								if(aux->marked)
+									aux = traveller->paths[UNITY];
+								traveller = aux;
+								//Keep track of the travel geodesic distance
+								maze->current_path->geodesic_dis += EUCLIDEAN(aux_geodis, traveller);
+							}else {
+								//Both ways are marked. This situation is like a dead-end chamber. So...
+								if (!stack_empty(maze->memory)){
+									//There's something in the maze's memory. It's time to a "backtracking".
+									//To not mix things up and *uck everything we call a auxiliary function.
+									//Renember that the current chamber is already in the top of tracking stack memory.
+									traveller = function_backtrack(maze, tracking);
+								}else{
+									//We don't have anything in maze stack memory, so the process supposedly is completed.
+									FLAG = FALSE;//End loops.
+								}
+							}
 						}
 					}
 				}
+				stack_destroy(tracking);
+				function_pathDestroy(maze->current_path);
+				maze->current_path = NULL;
 			}
-			stack_destroy(tracking);
 		}
-	}
+};
 
-	return solutions;
-}
+//Those four functions below are just to request some encapsuled information, from here to main.
+//Request maze number of dots/chambers.
+unsigned int get_numDots(MAZE *maze){
+	if (maze != NULL)
+		return maze->num_dots;
+	return EMPTY;
+};
+
+//Request number of paths of a specific chamber 
+unsigned int get_numPaths(CHAMBER **chambers, short int index){
+	if (chambers != NULL && index >= EMPTY)
+		return chambers[index]->num_paths;
+	return EMPTY;
+};
+
+//Rotates the adresses of a specific chamber to the left
+void function_swapAdress(CHAMBER **chambers, short int index){
+	if (chambers != NULL && index >= EMPTY)
+		for(short int i = EMPTY; i < (chambers[index]->num_paths - UNITY); i++)
+			SWAP(chambers[index]->paths[i], chambers[index]->paths[i + UNITY]);
+};
+
+//Reset chambers to a new pathfinding.
+void function_cleanChambers(CHAMBER **chambers, int size){
+	if (chambers != NULL){
+		for(int i = EMPTY; i < size; i++){
+			chambers[i]->marked = FALSE;
+			chambers[i]->paths_minus = EMPTY;
+		}
+		chambers[size]->paths_minus = EMPTY;
+	}
+};

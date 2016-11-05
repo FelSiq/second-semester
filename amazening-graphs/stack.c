@@ -74,4 +74,4 @@ CHAMBER *stack_top(STACK *stack){
 	if (stack != NULL && stack->top != NULL)
 		return stack->top->memory;
 	return NULL;
-}
+};
