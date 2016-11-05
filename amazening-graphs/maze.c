@@ -493,7 +493,11 @@ static CHAMBER *function_backtrack(MAZE *maze, STACK *tracking){
 
 //Main function of pathfinding.
 void maze_searchPaths(MAZE *maze, SOLUTIONS *solutions){
+	#ifdef DEBUG
+		printf("D: New pathfinding is setting up now...\n");
+	#endif
 	if (maze != NULL){
+		//Setting basic pathfinding things up;
 		STACK *tracking = stack_create();
 		maze->current_path = function_pathInit();
 		CHAMBER *traveller = maze->start;
@@ -513,12 +517,12 @@ void maze_searchPaths(MAZE *maze, SOLUTIONS *solutions){
 					#endif
 					//Last but not least, check if the current chamber has a maze exit and this solutions is not a backtrack copy
 				if (!traveller->marked){
-						//First things first current chamber to the currenth path solution
+					//First things first current chamber to the currenth path solution
 					maze->current_path->path_indexes = (short int *) realloc(maze->current_path->path_indexes, 
 						sizeof(short int) * (UNITY + maze->current_path->path_size));
 					maze->current_path->path_indexes[maze->current_path->path_size++] = traveller->index;
 					if (traveller->end_chamber){
-							//If true, register the current solution.
+						//If true, register the current solution.
 						function_addSolution(solutions, maze->current_path);
 					}
 				}
@@ -526,29 +530,32 @@ void maze_searchPaths(MAZE *maze, SOLUTIONS *solutions){
 				traveller->marked = TRUE;
 					//Now we going to see all the possibilities of the current chamber.
 				if(traveller->index == INVALID || traveller->num_paths == traveller->paths_minus){
-						//These are condiditions for exception cases
+					//These are condiditions for exception cases.
+					//if traveller->index == INVALID, then we reached the masters chambers (act like a head node in a list)
+					//if second condition, then we exhasut all the possibilities in this chamber
 					if (traveller->index != INVALID && !stack_empty(maze->memory))
 						traveller = function_backtrack(maze, tracking);
 					else
 						FLAG = FALSE;
-				} else if (/*traveller->num_paths - traveller->paths_minus > UNITY*/traveller->num_paths > 2){
-						//'paths_minus' tracks the number of exits of the current chamber.
-						//If the statement above is true, then we got a brand-new exit (the way back does not counts, hence '- UNITY')
-						//It's important to known that every extra way in a start chamber is already considered brand-news possible exits.
-						//First, stack this chamber to backtrack in future
+				} else if (traveller->num_paths > 2){
+					//'paths_minus' tracks the number of exits of the current chamber.
+					//If the statement above is true, then we got a brand-new exit (the way back does not counts, hence '- UNITY')
+					//It's important to known that every extra way in a start chamber is already considered brand-news possible exits.
+					//First, stack this chamber to backtrack in future
 					stack_push(maze->memory, traveller);
-						//Then, select a any way.
+					//Then, select a any way.
 					CHAMBER *aux = NULL;
 					do aux = traveller->paths[traveller->paths_minus++];
 					while ((traveller->paths_minus < traveller->num_paths) && aux->marked);
 					//We chosed a way, so there will be a one way less in the next time we visit this chamber.
 					//First, verify if it's really a valid choice:
 					if (aux->marked){
+						//It's not a valid choide. Then, whe don't have much more options.
+						//First, pop out this chamber of the stack memory.
 						stack_pop(maze->memory);	
 						if (!stack_empty(maze->memory)){
 							//There's something in the maze's memory. It's time to a "backtracking".
 							//To not mix things up and *uck everything we call a auxiliary function.
-							//Renember that the current chamber is already in the top of tracking stack memory.
 							traveller = function_backtrack(maze, tracking);
 						}else{
 							//We don't have anything in maze stack memory, so the process supposedly is completed.
@@ -610,6 +617,7 @@ void maze_searchPaths(MAZE *maze, SOLUTIONS *solutions){
 						}
 					}
 				}
+				//Cleaning things up for the next pathfinding
 				stack_destroy(tracking);
 				function_pathDestroy(maze->current_path);
 				maze->current_path = NULL;
@@ -637,13 +645,21 @@ void function_swapAdress(CHAMBER **chambers, short int index){
 	if (chambers != NULL && index >= EMPTY)
 		for(short int i = EMPTY; i < (chambers[index]->num_paths - UNITY); i++)
 			SWAP(chambers[index]->paths[i], chambers[index]->paths[i + UNITY]);
+	#ifdef DEBUG
+		printf("Swapped adresses:\n");
+		for(short int i = EMPTY; i < (chambers[index]->num_paths); i++)
+			printf("[%p]", chambers[index]->paths[i]);
+		printf("\n");
+	#endif
 };
 
-//Reset chambers to a new pathfinding.
+//Reset chambers to a new pathfinding. Note that dead-end chambers with no purpose aren't not marked off,
+//to speed up the pathfinding process.
 void function_cleanChambers(CHAMBER **chambers, int size){
 	if (chambers != NULL){
 		for(int i = EMPTY; i < size; i++){
-			chambers[i]->marked = FALSE;
+			if (chambers[i]->end_chamber || chambers[i]->num_paths > UNITY)
+				chambers[i]->marked = FALSE;
 			chambers[i]->paths_minus = EMPTY;
 		}
 		chambers[size]->paths_minus = EMPTY;

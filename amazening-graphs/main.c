@@ -20,12 +20,15 @@ int main(int argc, char const *argv[]){
 		//possibilities for every combination of preferences in the chambers exits.
 		//Note that only chambers with extras paths are taken into count.
 		for(int i = ((int) get_numDots(maze) - UNITY); i >= EMPTY; i--){
-			if (get_numPaths(chambers, i) > 2)
+			if (get_numPaths(chambers, i) > 2){
 				function_cleanChambers(chambers, get_numDots(maze));
-				for(int j = ((int) get_numPaths(chambers, i)); j > EMPTY; j--){
+				for(int j = ((int) get_numPaths(chambers, i)); j >= EMPTY; j--){
 					function_swapAdress(chambers, i);
 					maze_searchPaths(maze, solutions);
 				}
+				//Set the adresses once again to get then in the original form
+				function_swapAdress(chambers, i);
+			}
 		}
 		//Now it's time to sort solutions and show then to the user.
 		if (solutions != NULL){
