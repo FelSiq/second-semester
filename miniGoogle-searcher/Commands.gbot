@@ -1,0 +1,12 @@
+abort session
+add keyword
+add site
+commands
+dump database
+exit
+refresh database
+refresh relevance
+remove keyword
+remove site
+search
+END
